@@ -2,6 +2,9 @@ import argparse
 import logging
 from pyspark.sql import SparkSession, functions as F, types as T
 
+# Script original proporcionado por el docente para la práctica de Databricks
+# Ajustado por: Lorena Tonguino
+
 # ------------------------------------------------------------------------------
 # 🪵 Logger Configuration
 # ------------------------------------------------------------------------------
