@@ -232,11 +232,11 @@ def main(p):
     spark = SparkSession.builder.appName("TruckR Extraction").getOrCreate()
     logger.info("Starting UTB extraction process")
 
-    input_path = os.path.join(p["source_path"], "*.txt")
+    input_path = os.path.join(p["source_path"], "**/*.txt")
     df = (
         spark.read.format("binaryFile")
         .option("pathGlobFilter", "*.txt")
-        .option("recursiveFileLookup", "false")
+        .option("recursiveFileLookup", "true")
         .load(input_path)
         .select(col("_metadata.file_path").alias("source_file"), col("content"))
     )
@@ -267,10 +267,17 @@ def main(p):
 # CLI entry
 # ============================================================
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="UTB PDF Extraction Parameters")
-    parser.add_argument("--source_path")
-    parser.add_argument("--target_table")
-    args = parser.parse_args()
+    # Comentamos el parser para que no de error en el notebook
+    # parser = argparse.ArgumentParser(description="UTB PDF Extraction Parameters")
+    # parser.add_argument("--source_path")
+    # parser.add_argument("--target_table")
+    # args = parser.parse_args()
 
-    params = {"source_path": args.source_path, "target_table": args.target_table}
+    # Definimos las rutas manualmente apuntando a tus archivos de texto
+    params = {
+        "source_path": "/Volumes/logistics/bronze/raw/txt_llm/",
+        "target_table": "logistics.bronze.truckr_loads"
+    }
+    
+    # Ejecutamos la función principal con estos parámetros
     main(params)

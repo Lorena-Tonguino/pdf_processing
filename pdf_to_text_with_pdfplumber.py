@@ -1,3 +1,4 @@
+%pip install pdfplumber
 import os
 import argparse
 import pdfplumber
@@ -16,10 +17,17 @@ parser.add_argument(
     required=True,
     help="Root folder to save extracted TXT files"
 )
-args = parser.parse_args()
 
-input_root = args.source_path
-output_root = args.target_path
+
+#args = parser.parse_args()
+
+#input_root = args.source_path
+#output_root = args.target_path
+
+# para probar en el notebook
+
+input_root = "/Volumes/logistics/bronze/raw/pdf/"
+output_root = "/Volumes/logistics/bronze/raw/txt/"
 
 # ------------------------------------------------------------
 # 📝 PDF Processing Function
