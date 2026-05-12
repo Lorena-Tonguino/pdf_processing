@@ -17,14 +17,14 @@ logger = logging.getLogger("UTB_Validator")
 # ------------------------------------------------------------------------------
 # 0️⃣ Parse Arguments
 # ------------------------------------------------------------------------------
-parser = argparse.ArgumentParser(description="UTB Extractor Validator")
-parser.add_argument(
-    "--source_table",
-    required=True,
-    help="Spark table name for validation (e.g., logistics.bronze.truckr_loads)"
-)
-args = parser.parse_args()
-source_table = args.source_table
+# Comentamos esto para el notebook:
+# parser = argparse.ArgumentParser(description="UTB Extractor Validator")
+# parser.add_argument("--source_table", required=True)
+# args = parser.parse_args()
+# source_table = args.source_table
+
+# Definimos la tabla que creamos en el paso anterior:
+source_table = "logistics.bronze.truckr_loads"
 
 # ------------------------------------------------------------------------------
 # 1️⃣ Spark Session
@@ -53,7 +53,7 @@ schema = T.StructType([T.StructField(f, T.StringType()) for f in fields])
 # 3️⃣ Ground Truth Record
 # ------------------------------------------------------------------------------
 truth_record = {
-    "source_file": "/Volumes/logistics/bronze/raw/pdf/source=UTB/1637351047899_UTB ME-FL-FL.pdf,
+    "source_file": "/Volumes/logistics/bronze/raw/pdf/source=UTB/1637351047899_UTB ME-FL-FL.pdf",
     "broker_name": "USA Truck Brokers Inc.",
     "broker_phone": "305-819-3000",
     "broker_fax": "305-819-7146",

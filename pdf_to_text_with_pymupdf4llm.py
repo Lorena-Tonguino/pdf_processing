@@ -1,4 +1,4 @@
-%pip install pymupdf4llm
+
 import os
 import argparse
 import logging
