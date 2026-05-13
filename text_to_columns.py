@@ -13,8 +13,16 @@ from pyspark.sql.types import MapType, StringType
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-import re
-from datetime import datetime
+# Definir campos de extracción antes de la clase
+EXTRACTION_FIELDS = [
+    "broker_name", "broker_phone", "broker_fax", "broker_address", "broker_city", "broker_state", "broker_zipcode", "broker_email",
+    "loadConfirmationNumber", "totalCarrierPay", "carrier_name", "carrier_mc", "carrier_address", "carrier_city",
+    "carrier_state", "carrier_zipcode", "carrier_phone", "carrier_fax", "carrier_contact",
+    "pickup_customer_1", "pickup_address_1", "pickup_city_1", "pickup_state_1", "pickup_zipcode_1", "pickup_start_datetime_1", "pickup_end_datetime_1",
+    "delivery_customer_1", "delivery_address_1", "delivery_city_1", "delivery_state_1", "delivery_zipcode_1", "delivery_start_datetime_1", "delivery_end_datetime_1",
+    "delivery_customer_2", "delivery_address_2", "delivery_city_2", "delivery_state_2", "delivery_zipcode_2", "delivery_start_datetime_2", "delivery_end_datetime_2",
+    "processed_at"
+]
 
 class UTBExtractor:
     def _normalize(self, text: str) -> str:
@@ -42,7 +50,7 @@ class UTBExtractor:
 
         # --- 1. LOAD INFO ---
         if m := re.search(r"Trip\s*#:\s*(\d+)", norm_text, re.I):
-            data["loadConfirmationNumber"] = m.group(1).strip() # 301238 [cite: 1]
+            data["loadConfirmationNumber"] = m.group(1).strip()
 
         # --- 2. BROKER INFO (Generalizado) ---
         # Nombre (Suele estar al inicio o cerca de las instrucciones)
@@ -58,11 +66,11 @@ class UTBExtractor:
             data["broker_zipcode"] = m.group(4).strip()
 
         if m := re.search(r"Tel[:\s]*([\d\-\s]{10,})", norm_text, re.I):
-            data["broker_phone"] = m.group(1).replace(" ", "").strip() # 305-819-3000 [cite: 4]
+            data["broker_phone"] = m.group(1).replace(" ", "").strip()
         if m := re.search(r"Fax[:\s]*([\d\-\s]{10,})", norm_text, re.I):
-            data["broker_fax"] = m.group(1).replace(" ", "").strip() # 305-819-7146 [cite: 5]
+            data["broker_fax"] = m.group(1).replace(" ", "").strip()
 
-        # Emails (Recopilar todos los encontrados) [cite: 3, 5, 18]
+        # Emails (Recopilar todos los encontrados)
         emails = re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", norm_text)
         if emails:
             data["broker_email"] = "; ".join(sorted(set(emails))).lower()
@@ -72,7 +80,7 @@ class UTBExtractor:
             data["carrier_name"] = m.group(1).strip()
         
         if m := re.search(r"MC\s*#?\s*(\d+)", norm_text, re.I):
-            data["carrier_mc"] = m.group(1).strip() # 1311415
+            data["carrier_mc"] = m.group(1).strip()
 
         # Carrier Address (Usando \s* para manejar los múltiples espacios entre TX y 78215) 
         carrier_pattern = r"Address\s+(.*?)\s+City\s+(.*?),\s+([A-Z]{2})\s+(\d{5})"
@@ -83,14 +91,14 @@ class UTBExtractor:
             data["carrier_zipcode"] = m.group(4).strip()
 
         if m := re.search(r"Phone\s+([\d\-\s]{10,})", norm_text, re.I):
-            data["carrier_phone"] = m.group(1).replace(" ", "").strip() # 786-796-0858
+            data["carrier_phone"] = m.group(1).replace(" ", "").strip()
         
         if m := re.search(r"Contact\s+(.*?)\s+(?:Service|Notes|Payment)", norm_text, re.I):
-            data["carrier_contact"] = m.group(1).strip() # Alejandro Arboleda (dispatcher
+            data["carrier_contact"] = m.group(1).strip()
 
         # --- 4. STOPS (Pickup & Deliveries) ---
         def extract_stop_data(prefix, stop_type_label, stop_num):
-            # Tu patrón corregido: Maneja "Address # 1" y salta campos intermedios como "Contact:" 
+            # Patrón corregido: Maneja "Address # 1" y salta campos intermedios como "Contact:" 
             pattern = (
                 rf"{stop_type_label}\s*#\s*{stop_num}\s+"
                 rf"Customer:\s*(.*?)\s+"
@@ -111,25 +119,15 @@ class UTBExtractor:
                 data[f"{prefix}_start_datetime_{stop_num}"] = self._parse_datetime(m.group(2), m.group(4))
                 data[f"{prefix}_end_datetime_{stop_num}"] = self._parse_datetime(m.group(2), m.group(5))
 
-        extract_stop_data("pickup", "PickUp", 1)    # LEWISTON, ME 
-        extract_stop_data("delivery", "Delivery", 1) # TAMPA, FL [cite: 3]
-        extract_stop_data("delivery", "Delivery", 2) # WEST PALM BEACH, FL [cite: 3]
+        extract_stop_data("pickup", "PickUp", 1)
+        extract_stop_data("delivery", "Delivery", 1)
+        extract_stop_data("delivery", "Delivery", 2)
 
         # --- 5. FINANCIALS ---
         if m := re.search(r"Total\s*To\s*Pay[:\s\$]*([\d,\.]+)", norm_text, re.I):
-            data["totalCarrierPay"] = m.group(1).replace(",", "").strip() # 3800.00 
+            data["totalCarrierPay"] = m.group(1).replace(",", "").strip()
 
         return data
-
-EXTRACTION_FIELDS = [
-    "broker_name", "broker_phone", "broker_fax", "broker_address", "broker_city", "broker_state", "broker_zipcode", "broker_email",
-    "loadConfirmationNumber", "totalCarrierPay", "carrier_name", "carrier_mc", "carrier_address", "carrier_city",
-    "carrier_state", "carrier_zipcode", "carrier_phone", "carrier_fax", "carrier_contact",
-    "pickup_customer_1", "pickup_address_1", "pickup_city_1", "pickup_state_1", "pickup_zipcode_1", "pickup_start_datetime_1", "pickup_end_datetime_1",
-    "delivery_customer_1", "delivery_address_1", "delivery_city_1", "delivery_state_1", "delivery_zipcode_1", "delivery_start_datetime_1", "delivery_end_datetime_1",
-    "delivery_customer_2", "delivery_address_2", "delivery_city_2", "delivery_state_2", "delivery_zipcode_2", "delivery_start_datetime_2", "delivery_end_datetime_2",
-    "processed_at"
-]
 
 def main(p):
     spark = SparkSession.builder.appName("UTB_Fix").getOrCreate()
