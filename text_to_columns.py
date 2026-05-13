@@ -47,7 +47,7 @@ class UTBExtractor:
         # --- 2. BROKER INFO (Generalizado) ---
         # Nombre (Suele estar al inicio o cerca de las instrucciones)
         if "USA Truck Brokers Inc." in norm_text:
-            data["broker_name"] = "USA Truck Brokers Inc." [cite: 1]
+            data["broker_name"] = "USA Truck Brokers Inc."
 
         # Dirección, Teléfono y Fax (Buscando patrones cerca de la sección de facturación) 
         broker_addr_pattern = r"USA\s+Truck\s+Brokers\s+Inc\.\s+(.*?)\s+(.*?),\s+([A-Z]{2})\s+(\d{5})"
