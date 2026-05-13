@@ -1,5 +1,4 @@
-#120526_7
-#120526_6
+#120526_8
 import os
 import re
 import logging
@@ -17,7 +16,6 @@ logger = logging.getLogger(__name__)
 class UTBExtractor:
     def _normalize(self, text: str) -> str:
         if not text: return ""
-        # Normalización: Se eliminan asteriscos y se colapsan espacios en blanco
         text = re.sub(r"\*", "", text) 
         text = re.sub(r"[ \t\u00A0]+", " ", text)
         return text
@@ -35,11 +33,10 @@ class UTBExtractor:
         data = {f: "" for f in EXTRACTION_FIELDS}
         norm_text = self._normalize(text)
 
-        # 1. BROKER INFO - Regex flexibles (insensible a mayúsculas)
+        # 1. BROKER INFO 
         if m := re.search(r"USA Truck Brokers Inc\.", norm_text, re.I):
             data["broker_name"] = m.group(0).strip().lower()
         
-        # Dirección Broker (soporte para multilínea y variaciones)
         if m := re.search(r"(\d+[\w\s]+Suite\s*\d+)\s*\n?\s*([\w\s]+),\s*([A-Z]{2})\s*(\d{5})", norm_text, re.I):
             data["broker_address"] = m.group(1).strip()
             data["broker_city"] = m.group(2).strip()
@@ -91,16 +88,19 @@ EXTRACTION_FIELDS = [
 def main(p):
     spark = SparkSession.builder.appName("UTB_Fix").getOrCreate()
     
-    # Corrección de la ruta de entrada para Unity Catalog (Volumes)
-    clean_path = p["source_path"].replace("dbfs:", "")
-    input_path = os.path.join(clean_path, "**/*.txt")
+    # 1. Corrección robusta de la ruta: limpieza y garantía de ruta absoluta
+    clean_path = p["source_path"].replace("dbfs:", "").strip()
+    if not clean_path.startswith("/"):
+        clean_path = "/" + clean_path
     
-    df = spark.read.format("binaryFile").option("recursiveFileLookup", "true").load(input_path)
+    # 2. Simplificamos lectura: Sin 'recursiveFileLookup' ni '**' para evitar bugs en Unity Catalog
+    input_path = os.path.join(clean_path, "*.txt")
+    df = spark.read.format("binaryFile").load(input_path)
     
-    # Normalización del campo source_file para coincidir con la tabla de verdad
+    # 3. Corrección del SyntaxWarning: Usamos 'r' (raw string) en la regex de la extensión
     df = df.withColumn("source_file", regexp_replace(col("_metadata.file_path"), "dbfs:", ""))
     df = df.withColumn("source_file", regexp_replace(col("source_file"), "txt_llm", "pdf"))
-    df = df.withColumn("source_file", regexp_replace(col("source_file"), "\.txt$", ".pdf"))
+    df = df.withColumn("source_file", regexp_replace(col("source_file"), r"\.txt$", ".pdf"))
     df = df.withColumn("source_file", regexp_replace(col("source_file"), "%20", " "))
 
     df = df.withColumn("text", col("content").cast("string"))
