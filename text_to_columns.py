@@ -1,3 +1,4 @@
+#120526_7
 #120526_6
 import os
 import re
@@ -16,7 +17,8 @@ logger = logging.getLogger(__name__)
 class UTBExtractor:
     def _normalize(self, text: str) -> str:
         if not text: return ""
-        text = re.sub(r"\*", "", text) # Quitamos asteriscos que rompen Regex
+        # Normalización: Se eliminan asteriscos y se colapsan espacios en blanco
+        text = re.sub(r"\*", "", text) 
         text = re.sub(r"[ \t\u00A0]+", " ", text)
         return text
 
@@ -33,12 +35,12 @@ class UTBExtractor:
         data = {f: "" for f in EXTRACTION_FIELDS}
         norm_text = self._normalize(text)
 
-        # 1. BROKER INFO - Búsqueda más agresiva
+        # 1. BROKER INFO - Regex flexibles (insensible a mayúsculas)
         if m := re.search(r"USA Truck Brokers Inc\.", norm_text, re.I):
             data["broker_name"] = m.group(0).strip().lower()
         
-        # Dirección Broker (buscamos el patrón de Miami Lakes)
-        if m := re.search(r"(\d+[\w\s]+Suite\s*\d+)\s*\n?\s*([\w\s]+),\s*([A-Z]{2})\s*(\d{5})", norm_text):
+        # Dirección Broker (soporte para multilínea y variaciones)
+        if m := re.search(r"(\d+[\w\s]+Suite\s*\d+)\s*\n?\s*([\w\s]+),\s*([A-Z]{2})\s*(\d{5})", norm_text, re.I):
             data["broker_address"] = m.group(1).strip()
             data["broker_city"] = m.group(2).strip()
             data["broker_state"] = m.group(3).strip()
@@ -56,10 +58,10 @@ class UTBExtractor:
             data["carrier_name"] = m.group(1).strip().lower()
         if m := re.search(r"MC#[:\s]*(\d+)", norm_text, re.I):
             data["carrier_mc"] = m.group(1).strip()
-        if m := re.search(r"Phone[:\s]*([\d\-\s]{10,})", norm_text, re.I):
-            # Capturamos el segundo teléfono (usualmente el del carrier)
-            phones = re.findall(r"[\d\-\s]{10,}", norm_text)
-            if len(phones) > 1: data["carrier_phone"] = phones[-1].replace(" ", "").strip()
+        
+        phones = re.findall(r"[\d\-\s]{10,}", norm_text)
+        if len(phones) > 1: 
+            data["carrier_phone"] = phones[-1].replace(" ", "").strip()
         
         # 3. LOAD & PAY
         if m := re.search(r"Trip\s*#[:\s]*(\d+)", norm_text, re.I):
@@ -67,17 +69,12 @@ class UTBExtractor:
         if m := re.search(r"Total\s*To\s*Pay[:\s\$]*([\d,\.]+)", norm_text, re.I):
             data["totalCarrierPay"] = m.group(1).replace(",", "").strip()
 
-        # 4. STOPS (Simplificado para asegurar match)
-        # Pickup 1
+        # 4. STOPS
         p_date = re.search(r"PickUp\s*Date[:\s]*([\d/]+)", norm_text, re.I)
         p_time = re.search(r"Time[:\s]*([\d:]+)\s*-\s*([\d:]+)", norm_text, re.I)
         if p_date and p_time:
             data["pickup_start_datetime_1"] = self._combine_dt(p_date.group(1), p_time.group(1))
             data["pickup_end_datetime_1"] = self._combine_dt(p_date.group(1), p_time.group(2))
-        
-        # (Se repite lógica similar para el resto de paradas...)
-        # Para brevedad, el código que te pasé antes ya cubría bien las paradas. 
-        # Lo importante es el MAIN abajo para el source_file.
         
         return data
 
@@ -93,15 +90,14 @@ EXTRACTION_FIELDS = [
 
 def main(p):
     spark = SparkSession.builder.appName("UTB_Fix").getOrCreate()
-    input_path = os.path.join(p["source_path"], "**/*.txt")
+    
+    # Corrección de la ruta de entrada para Unity Catalog (Volumes)
+    clean_path = p["source_path"].replace("dbfs:", "")
+    input_path = os.path.join(clean_path, "**/*.txt")
     
     df = spark.read.format("binaryFile").option("recursiveFileLookup", "true").load(input_path)
     
-    # --- CORRECCIÓN CRUCIAL DEL SOURCE_FILE ---
-    # 1. Quitamos 'dbfs:'
-    # 2. Reemplazamos 'txt_llm' por 'pdf' (para que coincida con Truth)
-    # 3. Cambiamos .txt por .pdf
-    # 4. Quitamos el %20 si existe
+    # Normalización del campo source_file para coincidir con la tabla de verdad
     df = df.withColumn("source_file", regexp_replace(col("_metadata.file_path"), "dbfs:", ""))
     df = df.withColumn("source_file", regexp_replace(col("source_file"), "txt_llm", "pdf"))
     df = df.withColumn("source_file", regexp_replace(col("source_file"), "\.txt$", ".pdf"))
