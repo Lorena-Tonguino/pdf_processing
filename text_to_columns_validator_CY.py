@@ -52,29 +52,32 @@ if target_count == 0:
     logger.error(f"Target record with loadConfirmationNumber={load_id} not found in {source_table}")
     raise ValueError(f"Target record {load_id} missing.")
 
-# ------------------------------------------------------------------------------
-# 3️⃣ Ground Truth Record Definition (Alineado al Agente de Coyote)
-# ------------------------------------------------------------------------------
+# ============================================================
+# 3️⃣ Ground Truth Record Definition (Alineado al PDF Real de Coyote)
+# ============================================================
 truth_record = {
+    # Se especifica el nombre real del archivo verificado en el volumen de PDFs de CY
+    "source_file": "/Volumes/logistics/bronze/raw/cy/pdf/1679676366011_CY FL-GA.pdf",     
+    
     "broker_name": "Coyote Logistics, LLC",
-    "broker_phone": "+1 (423) 385 3805 x2246",       # Teléfono directo del agente operativo
-    "broker_fax": "+1 (847) 810 4891",               # Fax directo del agente operativo
-    "broker_address": "25 Northpoint Parkway",
+    "broker_phone": "+1 (423) 385 3805 x2246",       # Teléfono directo del agente operativo (Pág 3)
+    "broker_fax": "+1 (847) 810 4891",                # Fax directo del agente operativo (Pág 3)
+    "broker_address": "960 Northpoint Parkway Suite 150", # Dirección real extraída del PDF (Pág 1 y 2)
     "broker_city": "Alpharetta",
     "broker_state": "GA",
     "broker_zipcode": "30005",
-    "broker_email": "Tamaz.Bazgadze@coyote.com",     # Correo directo del agente operativo
+    "broker_email": "Tamaz.Bazgadze@coyote.com",     # Correo directo del agente operativo (Pág 1)
     "loadConfirmationNumber": "28861101",
-    "totalCarrierPay": "600.00",                     # String plano para homologación de tipos en Spark
+    "totalCarrierPay": "600.00",                     # Confirmado: Tarifa Plana + Fuel Surcharge (Pág 3)
     "carrier_name": "GTT Freight Corp",
-    "carrier_mc": "3723304",                         # Mapeado al USDOT por diseño lógico de Coyote
+    "carrier_mc": "3723304",                         # USDOT del Carrier listado en el documento (Pág 1)
     "carrier_address": "",
     "carrier_city": "",
     "carrier_state": "",
     "carrier_zipcode": "",
     "carrier_phone": "",
     "carrier_fax": "",
-    "carrier_email": "gtt.expresscorp@gmail.com",
+    "carrier_email": "gtt.expresscorp@gmail.com",    # Correo del Carrier en la tabla (Pág 3)
     
     # Orígenes (Pickups)
     "pickup_customer_1": "United Sugars",
@@ -83,7 +86,7 @@ truth_record = {
     "pickup_state_1": "FL",
     "pickup_zipcode_1": "33440",
     "pickup_start_datetime_1": "2023-03-29T08:00:00",
-    "pickup_end_datetime_1": "2023-03-29T08:00:00",
+    "pickup_end_datetime_1": "2023-03-29T13:00:00",
     
     "pickup_customer_2": "", "pickup_address_2": "", "pickup_city_2": "", "pickup_state_2": "", "pickup_zipcode_2": "", "pickup_start_datetime_2": "", "pickup_end_datetime_2": "",
     "pickup_customer_3": "", "pickup_address_3": "", "pickup_city_3": "", "pickup_state_3": "", "pickup_zipcode_3": "", "pickup_start_datetime_3": "", "pickup_end_datetime_3": "",

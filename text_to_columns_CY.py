@@ -18,8 +18,9 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import udf, col
+from pyspark.sql.functions import udf, regexp_replace, col
 from pyspark.sql.types import MapType, StringType
+
 
 # ============================================================
 # Logger
@@ -130,10 +131,13 @@ class CoyoteExtractor(BaseExtractor):
         # Se mantiene la entidad corporativa principal como base.
         data["broker_name"] = "Coyote Logistics, LLC"
         
-        # Extracción analítica de la dirección de facturación corporativa (Encabezado).
-        direc_match = re.search(r"(\d+)\s+Northpoint\s+Parkway\s+([A-Za-z\s]+),\s*([A-Z]{2})\s*(\d{5})", text, re.I)
+        #(\d+\s+Northpoint\s+Parkway\s+Suite\s+\d+): Captura como un solo bloque desde el número de la calle hasta el número de la Suite (960 Northpoint Parkway Suite 150), guardándolo #directo en broker_address.
+        #([A-Za-z]+): Salta limpiamente a capturar solo la palabra de la ciudad (Alpharetta).
+        
+        # Extracción analítica de la dirección corporativa (Soporta Suite con números)
+        direc_match = re.search(r"(\d+\s+Northpoint\s+Parkway\s+Suite\s+\d+)\s+([A-Za-z]+),\s*([A-Z]{2})\s*(\d{5})", text, re.I)
         if direc_match:
-            data["broker_address"] = f"{direc_match.group(1)} Northpoint Parkway"
+            data["broker_address"] = direc_match.group(1).strip()
             data["broker_city"] = direc_match.group(2).strip()
             data["broker_state"] = direc_match.group(3).strip()
             data["broker_zipcode"] = direc_match.group(4).strip()
@@ -191,8 +195,10 @@ class CoyoteExtractor(BaseExtractor):
         # ----------------------------------------------------------------------
         # 4. Liquidación Económica (Total Pay)
         # ----------------------------------------------------------------------
-        # Se prioriza la captura del elemento 'Total' financiero definitivo del documento.
-        if m := re.search(r"Total\s+\$([\d,]+\.\d{2})", text, re.I):
+        # Se prioriza la captura del total definitivo precedido por la divisa corporativa USD $
+        if m := re.search(r"USD\s*\$\s*([\d,]+\.\d{2})", text, re.I):
+            data["totalCarrierPay"] = m.group(1).replace(",", "").strip()
+        elif m := re.search(r"Total\s+\$([\d,]+\.\d{2})", text, re.I):
             data["totalCarrierPay"] = m.group(1).replace(",", "").strip()
         elif m := re.search(r"Amount\s+\$([\d,]+\.\d{2})", text, re.I):
             data["totalCarrierPay"] = m.group(1).replace(",", "").strip()
@@ -221,11 +227,19 @@ class CoyoteExtractor(BaseExtractor):
                     data[f"pickup_zipcode_{i}"] = m.group(4).strip()
 
                 date_m = re.search(r"Scheduled For\s+([A-Za-z ]+)?(\d{2}/\d{2}/\d{4})", block, re.I)
-                time_m = re.search(r"(?:from|at)\s*([\d: \-]+(?:AM|PM)?)", block, re.I)
+                
+                # Modificado: Captura explícita de rangos con guion (ej: 08:00 - 13:00) o un valor único
+                time_m = re.search(r"(?:from|at)\s*([\d:]+)\s*(?:-\s*([\d:]+))?", block, re.I)
+                
                 if date_m and time_m:
-                    extracted_dt = self._combine_dt(date_m.group(2), time_m.group(1))
-                    data[f"pickup_start_datetime_{i}"] = extracted_dt
-                    data[f"pickup_end_datetime_{i}"] = extracted_dt
+                    fecha_str = date_m.group(2)
+                    hora_inicio = time_m.group(1).strip()
+                    hora_fin = time_m.group(2).strip() if time_m.group(2) else hora_inicio
+                    
+                    # Se combinan de forma independiente para start y end
+                    data[f"pickup_start_datetime_{i}"] = self._combine_dt(fecha_str, hora_inicio)
+                    data[f"pickup_end_datetime_{i}"] = self._combine_dt(fecha_str, hora_fin)
+                
                 p_idx += 1
 
             elif stop["type"] == "delivery":
@@ -288,7 +302,9 @@ def extract_fields_udf():
 
     return udf(_extract, MapType(StringType(), StringType()))
 
-
+"""
+El script text_to_columns_CY.py es una plantilla genérica que dice: "Dame una ruta en p["source_path"] y yo proceso los .txt que estén allá adentro". Y es el Notebook el que le ordena textualmente: "Toma, procesa los archivos de esta ruta de cy/txt_pymupdf4llm/" (con source_path_final)
+"""
 # ============================================================
 # Main (parameterized)
 # ============================================================
@@ -302,9 +318,26 @@ def main(p):
         .option("pathGlobFilter", "*.txt")
         .option("recursiveFileLookup", "false")
         .load(input_path)
-        .select(col("_metadata.file_path").alias("source_file"), col("content"))
     )
 
+    # AJUSTE DE RUTA DINÁMICO:
+    # El sistema transforma la ruta del archivo de metadatos de forma agnóstica a la fuente (sea cy o utb)
+    # para que coincida exactamente con la ubicación requerida por la tabla de verdades del validador.
+    
+    
+    # El proceso remueve el prefijo del sistema de archivos 'dbfs:' si está presente
+    df = df.withColumn("source_file", regexp_replace(col("_metadata.file_path"), "^dbfs:", ""))
+    
+    # Sustituir de forma dinámica cualquier carpeta de texto intermedia por 'pdf'
+    df = df.withColumn("source_file", regexp_replace(col("source_file"), "raw/cy/[^/]+/", "raw/cy/pdf/"))
+    
+    # Se modifica la extensión final del archivo para cambiar la referencia de texto plano ('.txt') a formato original ('.pdf')
+    df = df.withColumn("source_file", regexp_replace(col("source_file"), r"\.txt$", ".pdf"))
+    
+    # Se limpian los caracteres especiales de URL codificados (como '%20') para restaurar los espacios en blanco correspondientes
+    df = df.withColumn("source_file", regexp_replace(col("source_file"), "%20", " "))
+
+    # El proceso continúa con la conversión del contenido binario a texto legible y la extracción de campos
     df = df.withColumn("text", col("content").cast("string")).drop("content")
     logger.info(f"Files detected: {df.count()}")
 
@@ -325,7 +358,6 @@ def main(p):
     )
 
     logger.info("CY extraction completed successfully.")
-
 
 # ============================================================
 # CLI entry
