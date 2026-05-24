@@ -85,44 +85,26 @@ class CoyoteExtractor(BaseExtractor):
         return stops
 
     def _extract_facility(self, block: str) -> str:
-        
-        # Busca todas las capturas del patrón "Facility [nombre]" en el bloque.
-        # Se usa findall en lugar de search para manejar bloques colapsados donde
-        # el PDF mezcla "Facility Notes" antes del nombre real del cliente,
-        # lo que haría que search se detuviera en el primer match incorrecto.
-        matches = re.findall(
+        m = re.search(
             r'Facility\s+(.+?)'
+            # stop-words del lookahead del regex
             r'(?=\s+(?:Address|SLIC|Contact|Phone|Notes|Facility|Numbers|No\s+Touch|Confirmation|>|Mon|Tue|Wed|Thu|Fri|Sat|Sun|\|))',
             block,
             re.I | re.S
         )
-        # Si no hay ningún match, retorna vacío
-        if not matches:
+        if not m:
             return ""
-
-        # Itera sobre los candidatos y toma el primero que no empiece con "Notes"
-        # (los que empiezan con Notes son bloques de Facility Notes, no nombres de clientes)
-        raw = ""
-        for candidate in matches:
-            candidate = candidate.strip()
-            if not re.match(r'(?i)^Notes\b', candidate):
-                raw = candidate
-                break
-
-        # Si todos los candidatos eran Notes, retorna vacío
-        if not raw:
-            return ""
-
-        # Elimina texto operacional que el PDF colapsa dentro del nombre
+        raw = m.group(1).strip()
+        
+        # Limpieza para que no capture datos de columnas colapsadas
         raw = re.sub(r'(?i)(Notes\s+Numbers.*|Notes\s+\-.*|Numbers\s+\d+.*)', '', raw).strip()
-        raw = re.sub(r'~~\S+~~', '', raw)                              # Artefactos del conversor PDF
-        raw = re.sub(r'(?i)\s*>?\s*Confirmation\b.*', '', raw).strip() # Texto de confirmación
-        raw = re.sub(r'(?i)\s*No\s+Touch\b.*', '', raw).strip()        # Instrucción operacional
-        raw = re.sub(r'(?i)\s*Lumper\b.*', '', raw).strip()            # Instrucción operacional
-        raw = re.sub(r'(?i)\s*Driver\s+Work\b', ' ', raw).strip()      # Instrucción operacional (reemplaza con espacio para no unir palabras)
-        raw = re.sub(r'\s+[a-z].*', '', raw).strip()                   # Elimina texto en minúscula que es ruido colapsado
-        raw = re.sub(r'(?i)^Notes\b.*', '', raw, flags=re.S).strip()   # Elimina si el raw completo empieza con Notes
-        raw = re.sub(r'\s+', ' ', raw)                                  # Colapsa espacios múltiples
+        raw = re.sub(r'~~\S+~~', '', raw)
+        raw = re.sub(r'(?i)\s*>?\s*Confirmation\b.*', '', raw).strip()
+        raw = re.sub(r'(?i)\s*No\s+Touch\b.*', '', raw).strip()
+        raw = re.sub(r'(?i)\s*Lumper\b.*', '', raw).strip() # para quitar la palabra Lumper al final de delivery_customer
+        raw = re.sub(r'(?i)^Notes\b.*', '', raw, flags=re.S).strip()  # elimina si empieza con Notes
+        raw = re.sub(r'(?i)\s*Driver\s+Work\b', ' ', raw).strip() # Reemplazar Driver Work con un espacio
+        raw = re.sub(r'\s+', ' ', raw)
         return raw.strip(" -|")
 
     #
@@ -154,10 +136,6 @@ class CoyoteExtractor(BaseExtractor):
         zone = re.sub(r'~~\S+~~', '', zone)               # Artefactos del conversor PDF
         zone = " ".join(zone.split())                     # Colapsa espacios múltiples
 
-        # Elimina códigos operacionales cortos al final del zone (ej: C33PS, XFR43N, NJE97G)
-        # que son artefactos del PDF y rompen el ancla del regex del Caso A
-        zone = re.sub(r'\s+[A-Z][A-Z0-9]{2,7}$', '', zone).strip()
-
         # ── CASO A: formato estándar "dirección Ciudad, ST ZIP" ──────────────
         # Busca el patrón ciudad-estado-zip al final de la cadena
         geo_m = re.search(r'(.+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)\s*$', zone, re.I)
@@ -171,11 +149,8 @@ class CoyoteExtractor(BaseExtractor):
             # y todo después es ciudad (cubre ciudades de dos palabras como Lithia Springs)
             slic_m = re.search(r'^(.+?)\s+(?:SLIC|N/A)\b', before_comma, re.I)
             if slic_m:
-                
                 address = slic_m.group(1).strip().upper()
                 city = before_comma[len(slic_m.group(1)):].strip()
-                city = re.sub(r'(?i)\bSLIC\b', '', city).strip()
-                city = re.sub(r'(?i)\bN/A\b', '', city).strip()
             else:
                 # Intento 2: busca la última abreviatura vial estándar como punto de corte
                 # entre dirección y ciudad (RD, DR, AVE, BLVD, WAY, etc.)
