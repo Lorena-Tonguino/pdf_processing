@@ -20,7 +20,7 @@ text_to_columns_CY.py v2 está diseñado para tolerar ese formato.
 """
 
 # Instalar librerías (Databricks — dejar que pip elija versiones compatibles)
-%pip install pymupdf pymupdf4llm
+#%pip install pymupdf pymupdf4llm
 dbutils.library.restartPython()
 
 import os
